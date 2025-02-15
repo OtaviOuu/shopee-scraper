@@ -15,7 +15,9 @@ class ShopeeScraper:
 
     async def _response_handler(self, event):
         if "rcmd_items" in event.response.url:
-            self.console.print(f"Capturado: {event.response.url}")
+            self.console.print(
+                f"[bold green]Capturado:[/bold green] {event.response.url}"
+            )
             self.latest_request_id = event.request_id
 
     async def _get_response_body(self, page):
@@ -34,13 +36,14 @@ class ShopeeScraper:
                 data = json.loads(body)
                 return data
             except json.JSONDecodeError:
-                self.console.print(f"Resposta inválida:\n{body[:500]}...")
+                self.console.print_exception()
                 return
 
     async def scrape(self, url):
         page = 0
         crawl = True
-        json_list = []
+        final_data = []
+        items_count = 0
         try:
             while crawl:
                 self.page = await self.browser.get(f"{url}?page={page}")
@@ -54,27 +57,42 @@ class ShopeeScraper:
                 page_data = await self._get_response_body(page)
 
                 if page_data:
-                    self.console.print_json(data=page_data)
-                    json_list.append(page_data)
-                    async with aiofiles.open("./data.json", "w") as f:
-                        await f.write(
-                            json.dumps(json_list, indent=4, ensure_ascii=False)
-                        )
+                    payload = page_data["data"]
+                    items_count += payload["total"]
+
+                    products = payload["items"]
+
+                    for p in products:
+                        produto_util = {
+                            "itemid": p.get("itemid"),
+                            "name": p.get("name"),
+                            "price": p.get("price"),
+                            "currency": p.get("currency"),
+                            "stock": p.get("stock"),
+                            "discount": p.get("discount"),
+                            "image": p.get("image"),
+                            "images": p.get("images"),
+                            "tier_variations": p.get("tier_variations"),
+                        }
+                        final_data.append(produto_util)
+                        self.console.print_json(data=produto_util)
                 page += 1
-        except TimeoutError:
-            self.console.print(f"⚠️ Página {url} não carregada")
+            async with aiofiles.open(f"./{url.split('/')[-1]}.json", "w") as f:
+                await f.write(json.dumps(final_data, indent=4, ensure_ascii=False))
+
+        except Exception as e:
+            self.console.print_exception()
             crawl = False
         self.console.print("🏁 Fim da execução")
         await self.browser.stop()
 
 
 async def main():
-    target_store = "https://shopee.com.br/spaceyy_oficial"
+    target_store = "https://shopee.com.br/sebodosaberdenatal"
 
     browser = await uc.start(
         headless=False,
         browser_executable_path="/snap/bin/chromium",
-        browser_args=["--no-sandbox", "--disable-gpu"],
         user_data_dir="./uc-user-data",
     )
 
